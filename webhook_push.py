@@ -1,45 +1,27 @@
 #!/usr/bin/env python3
-"""Push new smzdm deals to Hermes webhook via HMAC-signed POST."""
-import hashlib, hmac, json, os, sqlite3, sys, urllib.request, urllib.error
+"""Push new smzdm deals via hermes send."""
+import os, sqlite3, subprocess, sys
 
-WEBHOOK_URL = os.environ.get("WEBHOOK_URL", "http://37.114.52.247:8644/webhooks/smzdm-deals")
-WEBHOOK_SECRET = os.environ.get("WEBHOOK_SECRET", "")
 DB_PATH = "database.db"
+HERMES_BIN = os.path.expanduser("~/.venv/bin/hermes")
+QQBOT_TARGET = "qqbot:2EC9F7D14F9F058E56D5C0A8D36A708B"
+os.environ["QQBOT_HOME_CHANNEL"] = "2EC9F7D14F9F058E56D5C0A8D36A708B"
 
-def sign(body: bytes) -> str:
-    return "sha256=" + hmac.new(WEBHOOK_SECRET.encode(), body, hashlib.sha256).hexdigest()
-
-def push(deal: dict):
-    body = json.dumps(deal, ensure_ascii=False).encode()
-    req = urllib.request.Request(
-        WEBHOOK_URL,
-        data=body,
-        headers={
-            "Content-Type": "application/json",
-            "X-Hub-Signature-256": sign(body),
-        },
-        method="POST",
+def send_msg(text: str):
+    result = subprocess.run(
+        [HERMES_BIN, "send", "--to", QQBOT_TARGET, text],
+        capture_output=True, text=True, timeout=30,
     )
-    try:
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            return resp.status
-    except urllib.error.HTTPError as e:
-        return e.code
+    return result.returncode == 0, result.stdout + result.stderr
 
 def main():
-    if not WEBHOOK_SECRET:
-        print("WARN: WEBHOOK_SECRET not set, skipping", file=sys.stderr)
-        return
-
     if not os.path.exists(DB_PATH):
-        print("No database.db found, skipping", file=sys.stderr)
+        print("No database.db found, skipping")
         return
 
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     cur = conn.cursor()
-
-    # Use article_time instead of timesort
     cur.execute("SELECT * FROM ZDM WHERE pushed = 0 ORDER BY article_time DESC LIMIT 20")
     rows = cur.fetchall()
 
@@ -56,27 +38,30 @@ def main():
         mall = row.get("article_mall", "")
         voted = row.get("article_voted", 0)
 
-        payload = {
-            "title": title,
-            "price": price,
-            "link": link,
-            "mall": mall,
-            "voted": voted,
-            "source": "smzdm",
-        }
+        msg = f"🛒 可悠然好价推送\n"
+        msg += f"━━━━━━━━━━━━━━━━━━━\n"
+        msg += f"📦 {title}\n"
+        if price:
+            msg += f"💰 {price}\n"
+        if mall:
+            msg += f"🏪 {mall}\n"
+        if voted:
+            msg += f"👍 {voted}人觉得值\n"
+        if link:
+            msg += f"🔗 {link}\n"
 
-        status = push(payload)
-        if 200 <= int(str(status)) < 300:
+        ok, out = send_msg(msg)
+        if ok:
             sent += 1
-            print(f"Pushed: {title[:40]}... ({price})")
+            print(f"✅ Sent: {title[:40]}...")
         else:
-            print(f"Failed ({status}): {title[:40]}...")
+            print(f"❌ Failed: {title[:40]}... {out[:100]}")
 
         cur.execute("UPDATE ZDM SET pushed = 1 WHERE article_id = ?", (row["article_id"],))
 
     conn.commit()
     conn.close()
-    print(f"\nPushed {sent}/{len(rows)} articles to webhook")
+    print(f"\nSent {sent}/{len(rows)} articles")
 
 if __name__ == "__main__":
     main()
