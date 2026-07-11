@@ -53,6 +53,7 @@ jobs:
         mvn package
         cp ./target/zdm-0.0.1.jar ./zdm.jar
     - name: main logic
+      continue-on-error: true
       env:
         maxPageSize: 20
         minVoted: 0
