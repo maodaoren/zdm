@@ -1,12 +1,10 @@
 name: zdm_crawler
 
 on:
-  #将下面两行代码取消注释
-  #schedule:
-    #- cron: "0/15 * * * *"
+  schedule:
+    - cron: "*/15 * * * *"
   workflow_dispatch:
     inputs:
-      # 这个是手动触发工作流界面上的选项, 选择True时,即使未满足COMMIT_THRESHOLD提交阈值,也会生成提交记录
       should_commit:
         description: '立即生成提交记录'
         type: boolean
@@ -23,7 +21,6 @@ jobs:
         java-version: '11'
         distribution: 'temurin'
         cache: maven
-    # 安装Chrome和 ChromeDriver
     - name: Setup Chrome
       uses: browser-actions/setup-chrome@v2
       with:
@@ -33,14 +30,11 @@ jobs:
     - name: Update PATH
       run: |
         sudo ln -sf /opt/hostedtoolcache/setup-chrome/chromium/stable/x64/chrome /usr/bin/google-chrome
-    # 将上次运行的缓存文件覆盖到本地
     - name: database cache restore
       uses: actions/cache@v4
       with:
         path: database_old.db
-        # 每次运行都是唯一的key,避免缓存过期 (缓存总上限10GB, LRU过期策略)
         key: ${{ runner.os }}-database_old-${{ github.run_number }}
-        # 兜底机制: 匹配符合这个前缀的最新缓存
         restore-keys: ${{ runner.os }}-database_old-
     - name: database cache copy
       id: db_copy
@@ -54,39 +48,31 @@ jobs:
         if [ -f database_old.db ]; then
           cp database_old.db database.db
         fi
-    # 打包项目
     - name: Build with Maven
       run: |
         mvn package
         cp ./target/zdm-0.0.1.jar ./zdm.jar
     - name: main logic
       env:
-        #爬取数据时的最大翻页数量
         maxPageSize: 10
-        # 点值的数量>minVoted,才会被推送,填0为都推送
         minVoted: 10
-        # 评论的数量>minComments,才会被推送,填0为都推送
         minComments: 2
-        # 优惠信息数量>MIN_PUSH_SIZE就会发邮件,否则积累到下一次触发任务再决定是否推送. 不建议填太小的数字,避免邮件太多了
-        MIN_PUSH_SIZE: 20
-        # 邮箱的smtp服务器地址(示例给出的是qq邮箱的配置,非qq邮箱需要进行修改)
+        MIN_PUSH_SIZE: 0
         emailHost: smtp.qq.com
-        # 邮箱smtp服务端口
         emailPort: 465
-        # 接收优惠信息的邮箱 为空代表不进行邮箱推送
         emailAccount: ${{secrets.emailAccount}}
-        # 接收优惠信息的邮箱的授权码 为空代表不进行邮箱推送
         emailPassword: ${{secrets.emailPassword}}
-        # WxPusher极简推送模式的spt 为空代表不进行Wx推送
         spt: ${{secrets.spt}}
-        # true:下载阶段打印出详细信息(待推送的优惠信息列表,过滤时使用的黑白词),因文本量比较大,在调通项目后可以改为false
         detail: false
       run: java -jar zdm.jar
-    # 检查数据库中新增行数是否超过提交阈值
+    - name: Push to Hermes Webhook
+      env:
+        WEBHOOK_SECRET: ${{secrets.WEBHOOK_SECRET}}
+      run: |
+        python3 webhook_push.py
     - name: check database changes
       id: commit_check
       env:
-        # 提交阈值,0代表每次运行都会生成commit记录
         COMMIT_THRESHOLD: 50
       run: |
         LAST_COUNT=${{ steps.db_copy.outputs.last_count }}
@@ -97,12 +83,11 @@ jobs:
           echo "should_commit=true" >> $GITHUB_OUTPUT
         fi
         cp database.db database_old.db
-    # 保存已推送和暂未推送的优惠信息
     - name: git add files
       if: steps.commit_check.outputs.should_commit == 'true' || inputs.should_commit == 'true'
       run: |
         git add database.db
-    - name: commit & push
+    - name: commit and push
       if: steps.commit_check.outputs.should_commit == 'true' || inputs.should_commit == 'true'
       uses: actions-go/push@master
       with:
