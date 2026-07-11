@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Push new smzdm deals via hermes webhook with HMAC-SHA256 signature."""
+"""Push new smzdm deals via hermes webhook with HMAC-SHA256 V2 signature."""
 import hashlib
 import hmac
 import json
@@ -19,28 +19,26 @@ WEBHOOK_URL = os.environ.get(
 WEBHOOK_SECRET = os.environ.get("HERMES_WEBHOOK_SECRET", "smzdm_hmac_secret_2026")
 
 
-def sign_payload(payload_bytes: bytes, secret: str, timestamp: str) -> str:
-    """Generate HMAC-SHA256 signature for webhook payload."""
-    signed_data = f"{timestamp}:{payload_bytes.decode('utf-8')}"
-    return hmac.new(
-        secret.encode('utf-8'),
-        signed_data.encode('utf-8'),
-        hashlib.sha256
-    ).hexdigest()
-
-
 def send_webhook(message: str) -> bool:
-    """Send message to hermes webhook endpoint."""
+    """Send message to hermes webhook endpoint with V2 HMAC signature."""
     payload = json.dumps({"message": message}).encode('utf-8')
     timestamp = str(int(time.time()))
-    signature = sign_payload(payload, WEBHOOK_SECRET, timestamp)
+
+    # V2 signature: HMAC-SHA256(secret, "{timestamp}.{body}")
+    signed_content = timestamp.encode() + b"." + payload
+    signature = hmac.new(
+        WEBHOOK_SECRET.encode('utf-8'),
+        signed_content,
+        hashlib.sha256
+    ).hexdigest()
 
     req = urllib.request.Request(
         WEBHOOK_URL,
         data=payload,
         headers={
             "Content-Type": "application/json",
-            "X-Webhook-Signature-V2": f"t={timestamp},v2={signature}",
+            "X-Webhook-Timestamp": timestamp,
+            "X-Webhook-Signature-V2": signature,
         },
         method="POST"
     )
@@ -48,7 +46,6 @@ def send_webhook(message: str) -> bool:
     try:
         with urllib.request.urlopen(req, timeout=10) as resp:
             status = resp.getcode()
-            body = resp.read().decode('utf-8')
             return status == 200
     except Exception as e:
         print(f"Webhook error: {e}", file=sys.stderr)
