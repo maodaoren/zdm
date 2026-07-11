@@ -73,10 +73,10 @@ def main():
     sent = 0
     for row in rows:
         title = row["article_title"]
-        price = row.get("article_price", "")
-        link = row.get("article_url", "")
-        mall = row.get("article_mall", "")
-        voted = row.get("article_voted", 0)
+        price = row["article_price"] if "article_price" in row.keys() else ""
+        link = row["article_url"] if "article_url" in row.keys() else ""
+        mall = row["article_mall"] if "article_mall" in row.keys() else ""
+        voted = row["article_voted"] if "article_voted" in row.keys() else 0
 
         msg = "🛒 可悠然好价推送\n"
         msg += "━━━━━━━━━━━━━━━━━━━\n"
