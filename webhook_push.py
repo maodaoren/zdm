@@ -39,8 +39,8 @@ def main():
     conn.row_factory = sqlite3.Row
     cur = conn.cursor()
 
-    # Get recently pushed articles (pushed=1 means already sent via email, check for new unpushed)
-    cur.execute("SELECT * FROM ZDM WHERE pushed = 0 ORDER BY timesort DESC LIMIT 20")
+    # Use article_time instead of timesort
+    cur.execute("SELECT * FROM ZDM WHERE pushed = 0 ORDER BY article_time DESC LIMIT 20")
     rows = cur.fetchall()
 
     if not rows:
@@ -55,7 +55,6 @@ def main():
         link = row.get("article_url", "")
         mall = row.get("article_mall", "")
         voted = row.get("article_voted", 0)
-        comments = row.get("article_comments", 0)
 
         payload = {
             "title": title,
@@ -63,18 +62,16 @@ def main():
             "link": link,
             "mall": mall,
             "voted": voted,
-            "comments": comments,
             "source": "smzdm",
         }
 
         status = push(payload)
-        if 200 <= status < 300:
+        if 200 <= int(str(status)) < 300:
             sent += 1
-            print(f"✅ Pushed: {title[:40]}... ({price})")
+            print(f"Pushed: {title[:40]}... ({price})")
         else:
-            print(f"❌ Failed ({status}): {title[:40]}...")
+            print(f"Failed ({status}): {title[:40]}...")
 
-        # Mark as pushed
         cur.execute("UPDATE ZDM SET pushed = 1 WHERE article_id = ?", (row["article_id"],))
 
     conn.commit()
