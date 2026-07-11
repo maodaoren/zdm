@@ -54,9 +54,9 @@ jobs:
         cp ./target/zdm-0.0.1.jar ./zdm.jar
     - name: main logic
       env:
-        maxPageSize: 10
-        minVoted: 10
-        minComments: 2
+        maxPageSize: 20
+        minVoted: 0
+        minComments: 0
         MIN_PUSH_SIZE: 0
         emailHost: smtp.qq.com
         emailPort: 465
