@@ -57,13 +57,13 @@ def parse_volume(title: str):
         m = re.search(pat, title_lower)
         if m:
             a, b = int(m.group(1)), int(m.group(2))
-            # 判断哪个是容量哪个是数量
-            if a > 100:  # a 是容量
+            # 判断哪个是容量
+            if 'ml' in pat or '毫升' in pat or 'g' in pat or '克' in pat:
+                # a 是 ml/g
                 return (a, b)
-            else:        # a 是数量, b 是容量
-                # 如果 b 是升为单位的大数，先转 ml
-                ml = b * 1000 if b < 100 else b
-                return (ml, a)
+            else:
+                # l/升: a 是升数，转成 ml
+                return (a * 1000, b)
 
     # 单独找容量
     m = re.search(r'(\d+)\s*(?:ml|毫升)', title_lower)
